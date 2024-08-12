@@ -99,6 +99,33 @@ func (svc *UserService) LoginHandler(w http.ResponseWriter, r *http.Request) {
 		res.Error = err.Error()
 		return
 	}
+	hasher := sha1.New()
+	sha := base64.URLEncoding.EncodeToString(hasher.Sum([]byte(loginBody.Password)))
+	repo := repository.UserRepo{MongoCollection: svc.MongoCollection}
+	existingUser, err := repo.FindByEmailPass(loginBody.Email)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		log.Print("Something Went Wrong", err)
+		res.Error = "Something Went Wrong"
+		return
+	}
+	log.Println("This is existing user", existingUser)
+	if existingUser == nil {
+		w.WriteHeader(http.StatusOK)
+		log.Print("User Not Found")
+		res.Error = "User Not Found"
+		return
+	}
+	if existingUser.Password != sha {
+		w.WriteHeader(http.StatusUnauthorized)
+		log.Print("Incorrect Password")
+		res.Error = "Incorrect Password"
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	log.Println("User Logged In", existingUser.UserID)
+	res.Data = existingUser
 }
 
 func (svc *UserService) UpdateUserScoreHandler(w http.ResponseWriter, r *http.Request) {
@@ -121,8 +148,8 @@ func (svc *UserService) UpdateUserScoreHandler(w http.ResponseWriter, r *http.Re
 	repo := repository.UserRepo{MongoCollection: svc.MongoCollection}
 	user, err := repo.FindUserByID(userId)
 	var userModel = *user
-	data, err := strconv.Atoi(score)
-	userModel.Score = data
+	data, err := strconv.ParseFloat(score, 32)
+	userModel.Score = float32(data)
 	result, err := repo.UpdateUser(userId, &userModel)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
